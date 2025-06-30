@@ -1,0 +1,121 @@
+SQL QUERIES: 
+
+select * from CustomerData1;
+
+-- 1.Understanding the overall churn rate of the company: 
+SELECT COUNT(*) AS TotalCustomers,
+       SUM(CASE WHEN UPPER(Cleaned_Churn) = 'YES' THEN 1 ELSE 0 END) AS ChurnedCustomers,
+       (SUM(CASE WHEN UPPER(Cleaned_Churn) = 'YES' THEN 1 ELSE 0 END) * 100.0) / COUNT(*) AS ChurnRate
+FROM CustomerData1;
+
+-- This shows that 1869 customers, left the company out of 7043, which is 26.53% of the total customers. 
+
+---2 Finding factors most strongly associated with churn: 
+WITH ChurnFactors AS (
+    SELECT customerID,
+           MonthlyCharges,
+           tenure,
+           Cleaned_Churn,
+           CASE 
+               WHEN MonthlyCharges > 50 THEN 'High Spend'
+               WHEN MonthlyCharges BETWEEN 30 AND 50 THEN 'Medium Spend'
+               ELSE 'Low Spend'
+           END AS SpendCategory,
+            TechSupport
+    FROM CustomerData1
+)
+SELECT SpendCategory,
+         TechSupport, 
+       COUNT(*) AS TotalCustomers,
+       SUM(CASE WHEN Cleaned_Churn = 'Yes' THEN 1 ELSE 0 END) AS ChurnedCustomers,
+       (SUM(CASE WHEN Cleaned_Churn = 'Yes' THEN 1 ELSE 0 END) * 100.0) / COUNT(*) AS ChurnRate
+FROM ChurnFactors
+GROUP BY SpendCategory,TechSupport
+ORDER BY ChurnRate DESC;
+
+
+---3. What are the monthly charges for each contract type, and which type contributes the most revenue?
+
+WITH RevenueByContract AS (
+    SELECT Contract,
+           SUM(MonthlyCharges) AS TotalRevenue,
+           AVG(MonthlyCharges) AS AverageMonthlyCharges
+    FROM CustomerData1
+    GROUP BY Contract
+)
+SELECT Contract, 
+       TotalRevenue, 
+       AverageMonthlyCharges,
+       RANK() OVER (ORDER BY TotalRevenue DESC) AS RevenueRank
+FROM RevenueByContract
+ORDER BY RevenueRank;
+
+
+-- 4.How does tenure impact churn and monthly charges?
+
+WITH TenureAnalysis AS (
+    SELECT tenure,
+           COUNT(*) AS TotalCustomers,
+           SUM(CASE WHEN Cleaned_Churn = 'Yes' THEN 1 ELSE 0 END) AS ChurnedCustomers,
+           AVG(MonthlyCharges) AS AverageMonthlyCharges
+    FROM CustomerData1
+    GROUP BY tenure
+)
+SELECT tenure,
+       TotalCustomers,
+       ChurnedCustomers,
+       (ChurnedCustomers * 100.0) / TotalCustomers AS ChurnRate,
+       AverageMonthlyCharges
+FROM TenureAnalysis
+ORDER BY tenure;
+
+--This shows the customers having longer tenure, correlates with lower churn and higher monthly charges. 
+
+-- 5. Calculate Customer Lifetime Value (CLV) by Contract Type
+---Insight: The Customer Lifetime Value (CLV) helps understand how much revenue each customer segment is likely to generate over their lifetime, providing insights for retention strategies.
+
+WITH CustomerCLV AS (
+    SELECT customerID,
+           MonthlyCharges * tenure AS CLV,
+           Contract
+    FROM CustomerData1
+)
+SELECT Contract,
+       SUM(CLV) AS TotalCLV,
+       AVG(CLV) AS AverageCLV
+FROM CustomerCLV
+GROUP BY Contract
+ORDER BY TotalCLV DESC;
+
+--- From calculating customer lifetime value we understand that, contract of Two year are more valuable in the longer term. 
+
+-- 6. Find the top 5 customers by monthly charges, and display their churn status
+
+WITH RankedCustomers AS (
+    SELECT customerID,
+           MonthlyCharges,
+           Cleaned_Churn,
+           DENSE_RANK() OVER (ORDER BY MonthlyCharges DESC) AS Rank
+    FROM CustomerData1
+)
+SELECT customerID, MonthlyCharges, Cleaned_Churn, Rank
+FROM RankedCustomers
+WHERE Rank <= 5
+ORDER BY Rank;
+
+--7. This query identifies high value customers and their churn status. 
+
+WITH HighRiskCustomers AS (
+    SELECT customerID,
+           MonthlyCharges,
+           tenure,
+           Cleaned_Churn,
+           RANK() OVER (ORDER BY MonthlyCharges DESC, tenure ASC) AS RiskRank
+    FROM CustomerData1
+)
+SELECT customerID, MonthlyCharges, tenure, Cleaned_Churn, RiskRank
+FROM HighRiskCustomers
+WHERE RiskRank <= 10 AND Cleaned_Churn = 'Yes'
+ORDER BY RiskRank;
+
+
